@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VOID // LUAC</title>
+<style>
+:root{color-scheme:dark;--bg:#070b14;--panel:#0e1728;--edge:#1b3550;--cyan:#00d2ff;--muted:#92a7c4;--white:#edf6ff}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#11253d,#070b14 60%);font:14px/1.5 system-ui,Arial;color:var(--white)}
+main{max-width:1200px;margin:auto;padding:22px}.brand{display:flex;align-items:center;gap:12px;margin-bottom:18px}.logo{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(135deg,#00d2ff,#7758ff);color:#03101b;font-weight:1000;font-size:20px}.brand h1{margin:0;font-size:20px;letter-spacing:2px}.brand p{margin:2px 0 0;color:var(--muted);font-size:12px}
+.layout{display:grid;grid-template-columns:1fr 1fr;gap:14px}.panel{background:#0b1423dd;border:1px solid var(--edge);border-radius:14px;overflow:hidden;min-width:0}.head{padding:13px 15px;border-bottom:1px solid var(--edge);display:flex;justify-content:space-between;gap:10px;font-weight:800;letter-spacing:.7px}.sub{font-size:11px;color:var(--muted);font-weight:500;letter-spacing:0}
+textarea,pre{display:block;width:100%;min-height:390px;margin:0;padding:15px;border:0;outline:0;background:#080e19;color:#d9f4ff;font:12px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre;overflow:auto;tab-size:2}pre{overflow:auto;overflow-wrap:anywhere;white-space:pre-wrap;word-break:break-word}
+.controls{display:flex;flex-wrap:wrap;gap:9px;padding:12px;border-top:1px solid var(--edge);align-items:center}.btn{border:1px solid #29435d;background:#111f32;color:var(--white);padding:9px 12px;border-radius:8px;font-weight:700;cursor:pointer}.btn.primary{background:linear-gradient(100deg,#00aaca,#6353dc);border:0;color:white}.opts{display:flex;flex-wrap:wrap;gap:14px;color:var(--muted);font-size:12px;padding:12px 14px}.opts label{display:flex;gap:6px;align-items:center}.status{margin:12px 0;padding:10px 13px;border:1px solid var(--edge);border-radius:10px;color:var(--muted);font-size:12px}.bottom{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.info{background:#0b1423;border:1px solid var(--edge);border-radius:12px;padding:14px}.info h3{margin:0 0 7px;font-size:13px}.info p{margin:0;color:var(--muted);font-size:12px}.warning{color:#ffd48a!important}
+@media(max-width:760px){main{padding:12px}.layout,.bottom{grid-template-columns:1fr}textarea,pre{min-height:280px}.head{font-size:12px}}
+</style></head>
+<body><main>
+<div class="brand"><div class="logo">V</div><div><h1>VOID // LUAC</h1><p>Local Luau transformation workbench</p></div></div>
+<div class="layout">
+<section class="panel"><div class="head"><span>INPUT.LUAU</span><span class="sub" id="inCount">0 chars</span></div><textarea id="source" spellcheck="false" placeholder="Paste your own Luau source here..."></textarea>
+<div class="opts">
+<label><input id="comments" type="checkbox" checked> Strip comments</label>
+<label><input id="compact" type="checkbox" checked> Compact whitespace</label>
+<label><input id="rename" type="checkbox"> Conservative local renaming (experimental)</label>
+</div><div class="controls"><button class="btn" id="sample">Load sample</button><button class="btn" id="clear">Clear</button><button class="btn primary" id="run">Transform code</button></div></section>
+<section class="panel"><div class="head"><span>OUTPUT.LUAU</span><span class="sub" id="outCount">0 chars</span></div><pre id="output">// Your transformed code will appear here.</pre><div class="controls"><button class="btn" id="copy">Copy output</button><button class="btn" id="download">Download .lua</button><button class="btn primary" id="build">Build bundle</button></div></section>
+</div>
+<div class="status" id="status">Ready. Transformations run in your browser; code is not uploaded.</div>
+<section class="panel" style="margin-top:14px">
+<div class="head"><span>REMOTE LOADER</span><span class="sub">Generate a loadstring loader for a hosted payload</span></div>
+<div style="padding:14px;display:grid;gap:10px">
+<label for="payloadUrl" style="color:var(--muted);font-size:12px">Your hosted .lua file URL</label>
+<input id="payloadUrl" type="url" placeholder="https://raw.githubusercontent.com/USERNAME/REPO/main/script.lua" style="width:100%;padding:12px;border:1px solid var(--edge);border-radius:8px;background:#080e19;color:var(--white);font:12px ui-monospace,monospace">
+<div class="controls" style="padding:0;border:0"><button class="btn primary" id="makeLoader">Generate loader</button><button class="btn" id="copyLoader">Copy loader</button><button class="btn" id="downloadLoader">Download loader.lua</button></div>
+<pre id="loaderOutput" style="min-height:120px;border:1px solid var(--edge);border-radius:8px">-- Enter a hosted script URL above, then tap Generate loader.</pre>
+<p class="sub">VOID cannot create a public internet URL by itself. First host your transformed .lua file in a repository or hosting service you control, then paste its raw file URL here. Use only with scripts and Roblox experiences you own or are authorized to test.</p>
+</div></section>
+<div class="bottom"><section class="info"><h3>What this does</h3><p>Comment stripping, conservative whitespace compaction, and an optional best-effort local-name renamer. Review and test the output in Roblox Studio. This is not a secure VM or a guarantee against reverse engineering.</p></section><section class="info"><h3>Loader / hosting</h3><p class="warning">The loader is a small remote fetch wrapper, not a secure licensing system. A public raw URL makes the payload publicly accessible. Do not put private keys or secrets in the client-side loader.</p></section></div>
+</main>
+<script>
+const $=id=>document.getElementById(id),src=$('source'),out=$('output');
+const sample=`local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local function greet(target)
+    print("Hello, " .. target.Name)
+end
+Players.PlayerAdded:Connect(greet)
+`;
+const placeholder='// Your transformed code will appear here.';
+function counts(){ $('inCount').textContent=src.value.length.toLocaleString()+' chars';let t=out.textContent===placeholder?'':out.textContent;$('outCount').textContent=t.length.toLocaleString()+' chars';}
+src.addEventListener('input',counts);
+function tokenize(code,strip){
+ let a=[],i=0,n=code.length,word=c=>!!c&&/[A-Za-z0-9_]/.test(c);
+ while(i<n){let c=code[i],d=code[i+1];
+  if(/\s/.test(c)){let j=i+1;while(j<n&&/\s/.test(code[j]))j++;a.push({k:'ws',v:code.slice(i,j)});i=j;continue;}
+  if(c==='-'&&d==='-'){let j=i+2,eq='',k=j;if(code[k]==='['){k++;while(code[k]==='='){eq+='=';k++;}if(code[k]==='['){let e=code.indexOf(']'+eq+']',k+1);j=e<0?n:e+eq.length+2; if(!strip)a.push({k:'comment',v:code.slice(i,j)});i=j;continue;}}
+   while(j<n&&code[j]!=='\n'&&code[j]!=='\r')j++;if(!strip)a.push({k:'comment',v:code.slice(i,j)});i=j;continue;}
+  if(c==='"'||c==="'"){let j=i+1;while(j<n){if(code[j]==='\\\\'){j+=2;continue;}if(code[j]===c){j++;break;}j++;}a.push({k:'lit',v:code.slice(i,j)});i=j;continue;}
+  if(c==='['){let k=i+1,eq='';while(code[k]==='='){eq+='=';k++;}if(code[k]==='['){let e=code.indexOf(']'+eq+']',k+1),j=e<0?n:e+eq.length+2;a.push({k:'lit',v:code.slice(i,j)});i=j;continue;}}
+  if(word(c)){let j=i+1;while(j<n&&word(code[j]))j++;a.push({k:'word',v:code.slice(i,j)});i=j;continue;}
+  let tri=code.slice(i,i+3),two=code.slice(i,i+2);if(['...','..='].includes(tri)){a.push({k:'sym',v:tri});i+=3;continue;}if(['==','~=','<=','>=','..','+=','-=','*=','/=','//','::','->'].includes(two)){a.push({k:'sym',v:two});i+=2;continue;}
+  a.push({k:'sym',v:c});i++;
+ }
+ return a;
+}
+function renameLocals(tokens){
+ // Deliberately conservative: renames only simple `local name` declarations and matching
+ // identifier tokens in the same flat source. If a name is shadowed or used as a property,
+ // it is left unchanged. This is a convenience, not a full Luau parser.
+ const reserved=new Set(('and break do else elseif end false for function if in local nil not or repeat return then true until while continue export type typeof self').split(' '));
+ let sig=tokens.map((t,i)=>({...t,i})).filter(t=>t.k!=='ws'&&t.k!=='comment');
+ let declarations=[];
+ for(let x=0;x<sig.length-1;x++){
+   if(sig[x].v==='local'&&sig[x+1].k==='word'&&sig[x+1].v!=='function'&&!reserved.has(sig[x+1].v)){
+     const name=sig[x+1].v;
+     // Skip declarations with duplicate spelling and property/method identifiers.
+     if(sig.some(z=>z.i!==sig[x+1].i&&z.v===name&&sig[z===undefined?0:0]===null))continue;
+     if(!declarations.some(d=>d.name===name)) declarations.push({name,alias:'_' + (declarations.length+1).toString(36)});
+   }
+ }
+ for(const d of declarations){
+   const occurrences=sig.filter((t,j)=>t.v===d.name && !(sig[j-1]&&['. ','.',':'].includes(sig[j-1].v)));
+   // Only rename when all occurrences look like variable refs, not table keys or function names.
+   if(occurrences.length<2)continue;
+   for(const t of tokens){if(t.k==='word'&&t.v===d.name)t.v=d.alias;}
+ }
+ return tokens;
+}
+function transform(code){
+ // Token-based output: keep every lexical token separate so compaction cannot
+ // accidentally merge operators or erase required spaces. Comments are omitted
+ // by tokenize() when the Strip comments option is enabled.
+ const ts=tokenize(code,$('comments').checked);
+ if($('rename').checked)renameLocals(ts);
+ if(!$('compact').checked)return ts.map(t=>t.v).join('');
+ let result='';
+ for(const t of ts){
+   if(t.k==='ws'){
+     if(result && !result.endsWith(' ')) result+=' ';
+     continue;
+   }
+   if(t.k==='comment') continue;
+   if(result && !result.endsWith(' ')) result+=' ';
+   result+=t.v;
+ }
+ return result.trim();
+}
+function getOutput(){return out.textContent===placeholder?'':out.textContent;}
+$('run').addEventListener('click',()=>{try{if(!src.value.trim()){$('status').textContent='Paste Luau code first.';return;}const r=transform(src.value);if(!r.trim()){out.textContent='-- No output was generated. Check whether the input contains only comments or whitespace.';$('status').textContent='No output generated. If your source has code, try turning off Strip comments and transform again.';}else{out.textContent=r;counts();$('status').textContent='Transform complete. Output generated: '+r.length.toLocaleString()+' characters.';}}catch(e){$('status').textContent='Transform failed: '+(e&&e.message?e.message:String(e));console.error(e);}});
+$('sample').onclick=()=>{src.value=sample;counts();$('status').textContent='Sample loaded. Tap Transform code.';};
+$('clear').onclick=()=>{src.value='';out.textContent=placeholder;counts();$('status').textContent='Cleared.';};
+$('copy').onclick=async()=>{let t=getOutput();if(!t){$('status').textContent='Generate output first.';return;}try{await navigator.clipboard.writeText(t);$('status').textContent='Copied output.';}catch(e){$('status').textContent='Clipboard blocked. Select and copy the output manually.';}};
+$('download').onclick=()=>{let t=getOutput();if(!t){$('status').textContent='Generate output first.';return;}let u=URL.createObjectURL(new Blob([t],{type:'text/plain'})),a=document.createElement('a');a.href=u;a.download='void_protected.lua';a.click();URL.revokeObjectURL(u);};
+function buildLoader(url){return `-- VOID // LUAC remote loader
+local url = ${JSON.stringify(url)}
+local ok, source = pcall(function()
+    return game:HttpGet(url)
+end)
+if not ok or type(source) ~= "string" or source == "" then
+    warn("VOID // LUAC: failed to fetch script")
+    return
+end
+local compileOk, fn = pcall(loadstring, source)
+if not compileOk or type(fn) ~= "function" then
+    warn("VOID // LUAC: script could not be compiled")
+    return
+end
+return fn()
+`;}
+function validPayloadUrl(){const v=$('payloadUrl').value.trim();try{const u=new URL(v);return (u.protocol==='https:'||u.protocol==='http:')?u.href:'';}catch{return '';}}
+$('makeLoader').onclick=()=>{const url=validPayloadUrl();if(!url){$('status').textContent='Paste a valid hosted .lua URL first. VOID cannot invent or host a public URL for you.';return;} $('loaderOutput').textContent=buildLoader(url);$('status').textContent='Loader generated. The URL must point directly to raw Lua source, not a webpage.';};
+$('copyLoader').onclick=async()=>{const t=$('loaderOutput').textContent;if(!t||t.startsWith('-- Enter a hosted')){$('status').textContent='Generate the loader first.';return;}try{await navigator.clipboard.writeText(t);$('status').textContent='Loader copied.';}catch{$('status').textContent='Clipboard blocked. Select and copy the loader manually.';}};
+$('downloadLoader').onclick=()=>{const t=$('loaderOutput').textContent;if(!t||t.startsWith('-- Enter a hosted')){$('status').textContent='Generate the loader first.';return;}const u=URL.createObjectURL(new Blob([t],{type:'text/plain'})),a=document.createElement('a');a.href=u;a.download='void_loader.lua';a.click();URL.revokeObjectURL(u);$('status').textContent='Downloaded void_loader.lua.';};
+$('build').onclick=()=>{const t=getOutput();if(!t){$('status').textContent='Transform code first.';return;}const payloadUrl=validPayloadUrl();if(!payloadUrl){$('status').textContent='Paste a hosted raw .lua URL in the Remote Loader panel before building.';return;}const loader=buildLoader(payloadUrl);const u=URL.createObjectURL(new Blob([loader],{type:'text/plain'})),a=document.createElement('a');a.href=u;a.download='void_loader.lua';a.click();URL.revokeObjectURL(u);$('status').textContent='Loader downloaded. Make sure the URL points to your transformed script.';};
+counts();
+</script></body></html>
